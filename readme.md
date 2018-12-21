@@ -1,3 +1,5 @@
+ssm-connect is a wrapper for the new AWS session-manager-plugin which allows you to start a session on any ssm enabled machines within your AWS account from within your terminal. With the awscli tool, you are required to specify the instance-id for the instance you wish to connect to, while this script will allow you to simply pass the name of the instance and it will look up the instance-id and connect you to the machine.
+
 # Requirements
 
 - Python 2.7 (Should be compatible with Python3)
@@ -18,7 +20,7 @@ https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-wor
 
 # Usage
 
-The script will use your aws credntials file to connect to AWS, and will use the `default` profile if none is specified. If you have multiple profiles set up in your credentials file, use the `-p` flag to tell the script which profile to use.
+The script will use your aws credentials file to connect to AWS, and will use the `default` profile if none is specified. If you have multiple profiles set up in your credentials file, use the `-p` flag to tell the script which profile to use.
 
 ```
 [~]# ssm-connect --help
