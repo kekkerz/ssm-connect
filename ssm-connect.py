@@ -15,26 +15,23 @@ class ssm:
         except ProfileNotFound:
             raise Exception('Default profile not found. Specify config profile.')
 
-        self.ec2_client = self.session.client('ec2')
+        self.ssm = self.session.client('ssm')
 
     def get_instance_id(self, name):
-        response = self.ec2_client.describe_instances(
+        response = self.ssm.describe_instance_information(
             Filters=[
                 {
-                    'Name': 'tag:Name',
+                    'Key': 'tag:Name',
                     'Values': [
-                        args.name
+                        name
                     ]
                 }
             ]
         )
 
-        try:
-            instances = response['Reservations'].pop()['Instances']
-        except IndexError:
-            raise Exception('No instances found')
-
+        instances = response['InstanceInformationList']
         instance_count = len(instances)
+
         if instance_count > 1:
             raise Exception('Multiple instances found.')
         elif instance_count < 1:
