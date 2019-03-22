@@ -70,7 +70,7 @@ class ssm:
             aws_secret_access_key=self.secret_access_key,
             aws_session_token=self.session_token,
             region_name=self.profile_region
-        )
+        ).describe_instance_information()
 
     def set_aws_session(self):
         self.session = boto3.Session(
@@ -78,7 +78,7 @@ class ssm:
             aws_secret_access_key=self.secret_access_key,
             aws_session_token=self.session_token,
             region_name=self.profile_region
-        ).describe_instance_information()
+        )
 
     def get_mfa_keys(self):
         self.access_key_id = mfa_config.get(self.mfa_token_section, 'access_key_id')
