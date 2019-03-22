@@ -52,8 +52,8 @@ class ssm:
                 self.verify_credentials()
             except (NoSectionError, NoOptionError, ClientError):
                 self.assume_role()
-            finally:
-                self.set_aws_session()
+
+            self.set_aws_session()
 
         except ProfileNotFound:
             raise Exception('Default profile not found. Specify config profile.')
