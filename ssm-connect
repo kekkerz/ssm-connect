@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+import argparse, boto3, botocore.session, subprocess, signal, readline, os
+from ConfigParser import ConfigParser
+from ConfigParser import NoOptionError
+from ConfigParser import NoSectionError
+from botocore.exceptions import ProfileNotFound
+from botocore.exceptions import ClientError
+from botocore import credentials
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-n', '--name', help='Instance name', required=True)
+parser.add_argument('-p', '--profile', help='AWS credentials profile name', default='default')
+parser.add_argument('-l', '--local', help='Local port used for reverse tunneling')
+parser.add_argument('-r', '--remote', help='Remote port used for reverse tunneling')
+args = parser.parse_args()
+
+class ssm:
+
+    def __init__(self, name, profile):
+        self.profile = profile
+        self.name = name
+        self.local = args.local
+        self.remote = args.remote
+        self.instance_id = None
+        try:
+            cli_cache = os.path.join(os.path.expanduser('~'),'.aws/cli/cache')
+
+            botocore_session = botocore.session.Session(profile=self.profile)
+            botocore_session.get_component('credential_provider').get_provider('assume-role').cache = credentials.JSONFileCache(cli_cache)
+
+            self.session = boto3.Session(botocore_session=botocore_session, profile_name=self.profile)
+        except ProfileNotFound:
+            raise Exception('Profile {} not found. Specify config profile.'.format(self.profile))
+
+        self.get_instance_id()
+        self.start_connection()
+
+    def get_instance_id(self):
+        self.ssm = self.session.client('ssm')
+        response = self.ssm.describe_instance_information(
+            Filters=[
+                {
+                    'Key': 'tag:Name',
+                    'Values': [
+                        self.name
+                    ]
+                }
+            ]
+        )
+
+        instances = response['InstanceInformationList']
+        instance_count = len(instances)
+
+        if instance_count > 1:
+            raise Exception('Multiple instances found.')
+        elif instance_count < 1:
+            raise Exception('No instances found.')
+        else:
+            self.instance_id = instances.pop()['InstanceId']
+
+    def start_connection(self):
+        if self.local and self.remote:
+            subprocess.call(['aws', 'ssm', 'start-session', '--target', '{}'.format(self.instance_id), '--document-name', 'AWS-StartPortForwardingSession', '--parameters={{"portNumber":["{}"],"localPortNumber":["{}"]}}'.format(self.remote, self.local), '--profile', '{}'.format(self.profile)])
+        else:
+            subprocess.call(['aws', 'ssm', 'start-session', '--target', '{}'.format(self.instance_id), '--profile', '{}'.format(self.profile)])
+
+#Properly handle CTRL+C and preventing SIGINT from exiting ssm session
+def handler(signum, frame):
+    pass
+
+signal.signal(signal.SIGINT, handler)
+ssm = ssm(args.name, args.profile)
