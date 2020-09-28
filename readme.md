@@ -12,6 +12,7 @@ boto3 and awscli can be installed with pip.
 ```
 pip install boto3 --user
 pip install argparse --user
+pip install ConfigParser --user
 pip install awscli --user
 ```
 
