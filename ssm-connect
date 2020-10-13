@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 import argparse, boto3, botocore.session, subprocess, signal, readline, os
-from ConfigParser import ConfigParser
-from ConfigParser import NoOptionError
-from ConfigParser import NoSectionError
 from botocore.exceptions import ProfileNotFound
 from botocore.exceptions import ClientError
 from botocore import credentials
