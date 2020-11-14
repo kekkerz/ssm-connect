@@ -1,23 +1,18 @@
 #!/usr/bin/env python
-import argparse, boto3, botocore.session, subprocess, signal, readline, os
+import argparse, boto3, botocore.session, subprocess
+import json, os, time, signal
 from botocore.exceptions import ProfileNotFound
 from botocore.exceptions import ClientError
 from botocore import credentials
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-n', '--name', help='Instance name', required=True)
-parser.add_argument('-p', '--profile', help='AWS credentials profile name', default='default')
-parser.add_argument('-l', '--local', help='Local port used for reverse tunneling')
-parser.add_argument('-r', '--remote', help='Remote port used for reverse tunneling')
-args = parser.parse_args()
-
 class ssm:
 
-    def __init__(self, name, profile):
-        self.profile = profile
-        self.name = name
-        self.local = args.local
-        self.remote = args.remote
+    def __init__(self):
+        self.arg_parser()
+        self.profile = self.args.profile
+        self.name = self.args.name
+        self.local = self.args.local
+        self.remote = self.args.remote
         self.instance_id = None
         try:
             cli_cache = os.path.join(os.path.expanduser('~'),'.aws/cli/cache')
@@ -26,34 +21,123 @@ class ssm:
             botocore_session.get_component('credential_provider').get_provider('assume-role').cache = credentials.JSONFileCache(cli_cache)
 
             self.session = boto3.Session(botocore_session=botocore_session, profile_name=self.profile)
+            self.ssm = self.session.client('ssm')
         except ProfileNotFound:
             raise Exception('Profile {} not found. Specify config profile.'.format(self.profile))
 
-        self.get_instance_id()
-        self.start_connection()
+        if self.args.name:
+            instances  = self.get_instance_id()
+            instance_count = len(instances)
+
+            if instance_count > 1:
+                raise Exception('Multiple instances found.')
+            elif instance_count < 1:
+                raise Exception('No instances found.')
+            else:
+                self.instance_id = instances.pop()
+
+        elif self.args.instance:
+            self.instance_id = self.args.instance
+        elif self.args.tags:
+            if len(self.get_instance_id()) == 0:
+                raise Exception('No instances found.')
+
+        if self.args.command:
+            self.send_command()
+        else:
+            self.start_connection()
+
+    def arg_parser(self):
+        parser = argparse.ArgumentParser()
+
+        target_group = parser.add_mutually_exclusive_group(required=True)
+        target_group.add_argument('-n', '--name', help='Instance name')
+        target_group.add_argument('-i', '--instance', help='Instance ID')
+        target_group.add_argument('-t', '--tags', help='Tags to target multiple instances', type=json.loads)
+
+        parser.add_argument('-c', '--command', help='Command to run on instance')
+        parser.add_argument('-p', '--profile', help='AWS credentials profile name', default='default')
+        parser.add_argument('-l', '--local', help='Local port used for reverse tunneling')
+        parser.add_argument('-r', '--remote', help='Remote port used for reverse tunneling')
+
+        self.args = parser.parse_args()
+
+        if self.args.tags and not self.args.command:
+            parser.error('--tags requires --command')
 
     def get_instance_id(self):
-        self.ssm = self.session.client('ssm')
+        self.platform_types = []
+
+        if self.args.name:
+            filters = {
+                'Key': 'tag:Name',
+                'Values': [
+                    self.name
+                ]
+            }
+        else:
+            filters = self.args.tags
+
         response = self.ssm.describe_instance_information(
-            Filters=[
-                {
-                    'Key': 'tag:Name',
-                    'Values': [
-                        self.name
-                    ]
-                }
-            ]
+            Filters=[filters]
         )
 
-        instances = response['InstanceInformationList']
-        instance_count = len(instances)
+        for i in response['InstanceInformationList']:
+            self.platform_types.append(i['PlatformType'])
 
-        if instance_count > 1:
-            raise Exception('Multiple instances found.')
-        elif instance_count < 1:
-            raise Exception('No instances found.')
+        return [instance['InstanceId'] for instance in response['InstanceInformationList']]
+
+    def wait_for_command(self, command_id):
+        timeout = time.time() + 30
+        command_state = None
+        while (command_state != 'Success' and command_state != 'Failed') and time.time() <= timeout:
+            status = self.ssm.list_commands(
+                    CommandId=command_id
+            )
+
+            command_state = status['Commands'][0]['StatusDetails']
+            time.sleep(1)
+
+        return command_state if command_state == 'Success' else None
+
+    def send_command(self):
+        if self.platform_types[0] == 'Linux':
+            document_name = 'AWS-RunShellScript'
+        elif self.platform_types[0] == 'Windows':
+            document_name = 'AWS-RunPowerShellScript'
+
+        if not self.args.tags:
+            instance_ids = [self.instance_id]
+            response = self.ssm.send_command(
+                InstanceIds = [self.instance_id],
+                DocumentName = document_name,
+                Parameters = {
+                    'commands': [self.args.command]
+                }
+            )
         else:
-            self.instance_id = instances.pop()['InstanceId']
+            instance_ids = self.get_instance_id()
+            if len(set(self.platform_types)) > 1:
+                raise Exception('Unable to run commands on mixed platform types')
+
+            response = self.ssm.send_command(
+                Targets = [self.args.tags],
+                DocumentName = document_name,
+                Parameters = {
+                    'commands': [self.args.command]
+                }
+            )
+
+        command_id = response['Command']['CommandId']
+        self.wait_for_command(command_id)
+
+        for instance in instance_ids:
+            output = self.ssm.get_command_invocation(
+                CommandId = command_id,
+                InstanceId = instance
+            )
+
+            print('##### {}:\n\n{}'.format(instance, output['StandardOutputContent']))
 
     def start_connection(self):
         if self.local and self.remote:
@@ -66,4 +150,4 @@ def handler(signum, frame):
     pass
 
 signal.signal(signal.SIGINT, handler)
-ssm = ssm(args.name, args.profile)
+ssm = ssm()
