@@ -4,10 +4,14 @@ This script supports MFA and shares session cache with AWS-CLI. Simply add your 
 
 https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
 
+This script also supports the use of SSO with aws-cli. Follow the directions below to get SSO set up in your aws config, and ssm-connect will be able to use it's cache to authenticate. Currently, you will still need to use `aws sso login --profile {profile_name}` for the initial authentication to an account. 
+
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html#sso-configure-profile
+
 # Requirements
 
-- Python 2/3
-- awscli
+- Python 3
+- awscli (SSO requires awscli v2)
 - boto3
 - argparse
 - ssm session-manager-plugin
@@ -30,11 +34,16 @@ The script will use your aws credentials file to connect to AWS, and will use th
 
 ```
 [~]# ssm-connect --help
-usage: ssm-connect [-h] -n NAME [-p PROFILE] [-l LOCAL] [-r REMOTE]
+usage: ssm-connect [-h] (-n NAME | -i INSTANCE | -t TAGS) [-c COMMAND] [-p PROFILE] [-l LOCAL] [-r REMOTE]
 
 optional arguments:
   -h, --help            show this help message and exit
   -n NAME, --name NAME  Instance name
+  -i INSTANCE, --instance INSTANCE
+                        Instance ID
+  -t TAGS, --tags TAGS  Tags to target multiple instances
+  -c COMMAND, --command COMMAND
+                        Command to run on instance
   -p PROFILE, --profile PROFILE
                         AWS credentials profile name
   -l LOCAL, --local LOCAL
@@ -59,4 +68,17 @@ The script also supports port forwarding. E.g.
 Starting session with SessionId: <session_id>
 Port <local_bind_port> opened for sessionId <session_id>.
 
+```
+
+Running commands on remote instances:
+```
+[~]# ssm-connect -n example -c hostname -p ex_profile
+##### i-xxxxxxxxxxxxxxxxx:
+
+example_host
+
+[~]# ssm-connect -t '[{"Key": "tag:Name", "Values":["example"]}]' -c hostname -p ex_profile
+##### i-xxxxxxxxxxxxxxxxx:
+
+example_host
 ```
