@@ -69,17 +69,18 @@ class ssm:
         self.platform_types = []
 
         if self.args.name:
-            filters = {
+            filters = [{
                 'Key': 'tag:Name',
                 'Values': [
                     self.name
                 ]
-            }
+            }]
         else:
             filters = self.args.tags
 
         response = self.ssm.describe_instance_information(
-            Filters=[filters]
+            Filters=filters,
+            MaxResults=50
         )
 
         for i in response['InstanceInformationList']:
@@ -121,7 +122,7 @@ class ssm:
                 raise Exception('Unable to run commands on mixed platform types')
 
             response = self.ssm.send_command(
-                Targets = [self.args.tags],
+                Targets = self.args.tags,
                 DocumentName = document_name,
                 Parameters = {
                     'commands': [self.args.command]
