@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 import argparse, boto3, botocore.session, subprocess
-import json, os, time, signal
+import json, os, time, signal, sys
+from botocore.waiter import WaiterModel
+from botocore.waiter import create_waiter_with_client
+from botocore.waiter import WaiterError
 from botocore.exceptions import ProfileNotFound
 from botocore.exceptions import ClientError
 from botocore import credentials
@@ -89,23 +92,64 @@ class ssm:
         return [instance['InstanceId'] for instance in response['InstanceInformationList']]
 
     def wait_for_command(self, command_id):
-        timeout = time.time() + 30
-        command_state = None
-        while (command_state != 'Success' and command_state != 'Failed') and time.time() <= timeout:
-            status = self.ssm.list_commands(
-                    CommandId=command_id
-            )
+        #timeout = time.time() + 30
+        #command_state = None
+        #while (command_state != 'Success' and command_state != 'Failed') and time.time() <= timeout:
+        #    status = self.ssm.list_commands(
+        #            CommandId=command_id
+        #    )
 
-            command_state = status['Commands'][0]['StatusDetails']
-            time.sleep(1)
+        #    command_state = status['Commands'][0]['StatusDetails']
+        #    time.sleep(1)
 
-        return command_state if command_state == 'Success' else None
+        #return command_state if command_state == 'Success' else None
+        waiter_name = 'command_finished'
+        waiter_config = {
+            'version': 2,
+            'waiters': {
+                'command_finished': {
+                    'operation': 'ListCommands',
+                    'delay': 5,
+                    'maxAttempts': 20,
+                    'acceptors': [
+                        {
+                            'matcher': 'pathAll',
+                            'expected': 'Success',
+                            'argument': 'Commands[].StatusDetails',
+                            'state': 'success'
+                        },
+                        {
+                            'matcher': 'pathAll',
+                            'expected': 'InProgress',
+                            'argument': 'Commands[].StatusDetails',
+                            'state': 'retry'
+                        },
+                        {
+                            'matcher': 'pathAll',
+                            'expected': 'Failed',
+                            'argument': 'Commands[].StatusDetails',
+                            'state': 'failure'
+                        }
+                    ]
+                }
+            }
+        }
+
+        waiter_model = WaiterModel(waiter_config)
+        custom_waiter = create_waiter_with_client(waiter_name, waiter_model, self.ssm)
+
+        try:
+            custom_waiter.wait(CommandId=command_id)
+        except WaiterError as e:
+            print(e)
+            sys.exit(1)
 
     def send_command(self):
-        if self.platform_types[0] == 'Linux':
-            document_name = 'AWS-RunShellScript'
-        elif self.platform_types[0] == 'Windows':
-            document_name = 'AWS-RunPowerShellScript'
+        #if self.platform_types[0] == 'Linux':
+        #    document_name = 'AWS-RunShellScript'
+        #elif self.platform_types[0] == 'Windows':
+        #    document_name = 'AWS-RunPowerShellScript'
+        document_name = 'AWS-RunShellScript'
 
         if not self.args.tags:
             instance_ids = [self.instance_id]
